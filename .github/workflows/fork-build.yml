@@ -1,0 +1,36 @@
+# Fork-only CI: builds the minSdk 30 APK on GitHub's runners. Not part of the upstream PR.
+name: Build APK (fork)
+on:
+  push:
+    branches: [ci/android-tv-11-apk]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest
+      - name: Lint (release)
+        id: lint
+        continue-on-error: true
+        run: ./gradlew lintRelease
+      - name: Assemble release APK (R8, debug-signed)
+        run: ./gradlew assembleRelease
+      - name: API-level lint findings
+        if: always()
+        run: |
+          f=app/build/reports/lint-results-release.txt
+          [ -f "$f" ] && { grep -E "NewApi|InlinedApi|ObsoleteSdkInt|errors?, .*warnings?" "$f" || echo "no NewApi/InlinedApi findings"; } || echo "no lint report"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: drooz-minsdk30
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/reports/lint-results-release.*
