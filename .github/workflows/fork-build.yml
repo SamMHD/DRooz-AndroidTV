@@ -1,0 +1,70 @@
+# Fork-only CI: builds the minSdk 28 APK and smoke-tests it on emulators. Not part of the upstream PR.
+name: Build + emulator smoke (fork)
+on:
+  push:
+    branches: [ci/android-tv-9-apk]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest
+      - name: Lint (release)
+        continue-on-error: true
+        run: ./gradlew lintRelease
+      - name: API-level lint findings
+        if: always()
+        run: |
+          f=app/build/reports/lint-results-release.txt
+          [ -f "$f" ] && { grep -E "\[(NewApi|InlinedApi|ObsoleteSdkInt|UnusedAttribute)\]" "$f" || echo "no NewApi/InlinedApi/ObsoleteSdkInt/UnusedAttribute findings"; } || echo "no lint report"
+      - name: Assemble release APK (R8, debug-signed)
+        run: ./gradlew assembleRelease
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: drooz-minsdk28
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/reports/lint-results-release.*
+
+  emulator:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { api: 28, target: android-tv, arch: x86 }
+          - { api: 29, target: default, arch: x86_64 }
+          - { api: 30, target: android-tv, arch: x86 }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: drooz-minsdk28
+          path: artifact
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.arch }}
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: bash .github/smoke.sh ${{ matrix.api }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-api${{ matrix.api }}
+          path: smoke-out
