@@ -20,12 +20,15 @@ adb install -r "$APK" 2>&1 | tail -1 | tee "$OUT/install.txt"
 grep -q Success "$OUT/install.txt" || { say "INSTALL FAILED"; exit 1; }
 adb shell dumpsys package $PKG | grep -E "versionName|minSdk" | head -2
 
+# Warm-up: the first launch after install is slow (JIT/profile), which made early key presses arrive late.
+adb shell am start -W -n $PKG/.ui.MainActivity >/dev/null; sleep 15; adb shell am force-stop $PKG
+
 run_case() { # name server user pass expected-text
   adb shell pm clear $PKG >/dev/null; adb logcat -c
   adb shell am start -W -n $PKG/.ui.MainActivity >/dev/null; sleep 10
   alive "launch ($1)"; shot "$1-0-launch"; say "$1 launch: $(texts "$1-0-launch")"
-  key KEYCODE_DPAD_CENTER; adb shell input text "$2"; sleep 1; key KEYCODE_ENTER
-  adb shell input text "$3"; sleep 1; key KEYCODE_ENTER
+  key KEYCODE_DPAD_CENTER; sleep 1; adb shell input text "$2"; sleep 1.5; key KEYCODE_ENTER
+  adb shell input text "$3"; sleep 1.5; key KEYCODE_ENTER
   adb shell input text "$4"; sleep 1; shot "$1-1-filled"; say "$1 filled: $(texts "$1-1-filled")"
   key KEYCODE_ENTER; sleep 8
   alive "submit ($1)"; shot "$1-2-result"; say "$1 result: $(texts "$1-2-result")"
