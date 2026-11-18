@@ -60,6 +60,7 @@ jobs:
           api-level: ${{ matrix.api }}
           target: ${{ matrix.target }}
           arch: ${{ matrix.arch }}
+          profile: tv_720p
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           script: bash .github/smoke.sh ${{ matrix.api }}
